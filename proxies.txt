@@ -1,0 +1,12 @@
+# Proxy list - one proxy per line
+# Supported formats:
+#   host:port
+#   http://host:port
+#   http://user:pass@host:port
+#   socks5://host:port
+#   socks5://user:pass@host:port
+#
+# Example:
+# 192.168.1.1:8080
+# http://proxy.example.com:3128
+# http://myuser:mypass@proxy.example.com:3128

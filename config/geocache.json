@@ -1,0 +1,72 @@
+{
+  "dubai|": {
+    "query": "Dubai",
+    "display_name": "Dubai",
+    "bounds": {
+      "north": 25.358,
+      "south": 24.793,
+      "east": 55.565,
+      "west": 54.89
+    },
+    "center_lat": 25.075499999999998,
+    "center_lng": 55.2275,
+    "location_type": "city",
+    "importance": 1.0
+  },
+  "london|": {
+    "query": "London",
+    "display_name": "London",
+    "bounds": {
+      "north": 51.686,
+      "south": 51.286,
+      "east": 0.334,
+      "west": -0.51
+    },
+    "center_lat": 51.486000000000004,
+    "center_lng": -0.088,
+    "location_type": "city",
+    "importance": 1.0
+  },
+  "tokyo|": {
+    "query": "Tokyo",
+    "display_name": "Tokyo",
+    "bounds": {
+      "north": 35.817,
+      "south": 35.523,
+      "east": 139.92,
+      "west": 139.571
+    },
+    "center_lat": 35.67,
+    "center_lng": 139.7455,
+    "location_type": "city",
+    "importance": 1.0
+  },
+  "pakistan|": {
+    "query": "Pakistan",
+    "display_name": "Pakistan",
+    "bounds": {
+      "north": 37.091675,
+      "south": 23.4341977,
+      "east": 77.1203914,
+      "west": 60.872855
+    },
+    "center_lat": 30.3308401,
+    "center_lng": 71.247499,
+    "location_type": "administrative",
+    "importance": 0.802751920263845
+  },
+  "karachi|": {
+    "query": "Karachi",
+    "display_name": "Karachi",
+    "bounds": {
+      "north": 25.08,
+      "south": 24.78,
+      "east": 67.22,
+      "west": 66.8
+    },
+    "center_lat": 24.93,
+    "center_lng": 67.00999999999999,
+    "location_type": "city",
+    "importance": 1.0
+  }
+}

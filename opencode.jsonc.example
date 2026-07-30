@@ -1,0 +1,44 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "ZohoMCP": {
+      "type": "local",
+      "command": [
+        "cmd",
+        "/c",
+        "npx",
+        "mcp-remote",
+        "YOUR_ZOHO_MCP_URL_HERE",
+        "--transport",
+        "http-only"
+      ]
+    },
+    "google-sheets": {
+      "type": "local",
+      "command": [
+        "uv",
+        "run",
+        "--directory",
+        "./sheets-mcp-server",
+        "sheets",
+        "--creds-file-path",
+        "./credentials.json",
+        "--token-path",
+        "./token.json"
+      ]
+    },
+    "github": {
+      "type": "local",
+      "command": [
+        "cmd",
+        "/c",
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_GITHUB_PERSONAL_ACCESS_TOKEN"
+      }
+    }
+  }
+}
