@@ -1,37 +1,29 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+# Secret API keys & Credentials
+credentials.json
+opencode.jsonc
 
-# Environments & Virtual Envs
+# Scraped Data & Output files
+output/
+data/
+progress.json
+old_outputs/
+
+# Logs & Temporary files
+logs/
+reports/
+*.log
+
+# Environment & Dependencies
 venv/
-env/
-.venv/
-ENV/
+.env
 
-# Agent & IDE workspace files
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE & Tool configurations
 .claude/
 .gemini/
 .playwright-mcp/
 .vscode/
 .idea/
-
-# Secret credentials, OpenCode configs, Session Data & Tokens
-credentials.json
-token.json
-opencode.jsonc
-.env
-google_session.json
-data/
-data/*
-
-# Runtime outputs, logs, and database files
-output/
-old_outputs/
-logs/
-db/*.db
-reports/
-
-# System files
-.DS_Store
-Thumbs.db

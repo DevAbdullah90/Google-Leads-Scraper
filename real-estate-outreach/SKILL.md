@@ -1,11 +1,11 @@
 ---
 name: real-estate-outreach
-description: Send personalized cold emails to real estate leads from Google Sheets. Use when the user says "email the leads", "send outreach", "process new leads", "email unsent leads", or any variation of sending emails to leads from the spreadsheet. Automatically marks sent leads as green in the sheet.
+description: Send personalized cold emails to real estate leads from Google Sheets. Use when the user says "email the leads", "send outreach", "process new leads", "email unsent leads", or any variation of sending emails to leads from the spreadsheet.
 ---
 
 # Real Estate AI Outreach Automation
 
-This skill automates sending personalized cold emails to real estate leads from Google Sheets, then marks them as sent.
+This skill automates sending personalized cold emails to real estate leads from Google Sheets.
 
 ## Quick Start
 
@@ -14,13 +14,13 @@ When the user says "email the leads" or similar:
 1. Read the Google Sheet to find unsent leads
 2. Generate personalized emails for each
 3. Send via Zoho Mail MCP
-4. Mark sent leads as SENT with green background
+4. Report summary at the end
 
 ## Configuration
 
 - **Spreadsheet ID**: `1-pNAcHLkZtERS3KZqSt9l-wPb0QIXdXDgSdCtmSAnGk`
 - **Sheet Name**: `Scraped Leads`
-- **Account ID**: `603147200000008002`
+- **Account ID**: `6031472000000008002`
 - **From Address**: `info@nexeagent.com`
 - **Signature File**: `config/email_signature.html`
 
@@ -88,17 +88,6 @@ For each lead, create a unique email referencing:
 }
 ```
 
-### Step 5: Update Sheet Status
-
-After each email:
-1. Write "SENT" to Column J
-2. Write today's date to Column K
-3. Apply green background using script:
-
-```bash
-python real-estate-outreach/scripts/apply_color.py "1-pNAcHLkZtERS3KZqSt9l-wPb0QIXdXDgSdCtmSAnGk" "Scraped Leads" <row> <row> green
-```
-
 ## Email Template Guidelines
 
 ### Subject Line Ideas
@@ -131,14 +120,8 @@ python real-estate-outreach/scripts/apply_color.py "1-pNAcHLkZtERS3KZqSt9l-wPb0Q
 ## Handling Failures
 
 If an email fails to send:
-1. Mark as "FAILED" in Column J
-2. Record error in Column K
-3. Apply red background:
-   ```bash
-   python real-estate-outreach/scripts/apply_color.py <spreadsheet_id> "Scraped Leads" <row> <row> red
-   ```
-4. Continue with next lead
-5. Report failures in summary
+1. Note the failure in the summary report
+2. Continue with next lead
 
 ## Summary Report
 
@@ -148,11 +131,6 @@ After processing all leads, generate:
 |---------------|--------------|-------|---------|--------|
 | Almira Real Estate | - | info@almira.ae | Subject line | SENT |
 | ... | ... | ... | ... | ... |
-
-## Scripts
-
-- `real-estate-outreach/scripts/apply_color.py` - Apply background color to rows
-- `scripts/mark_sent.py` - Mark leads as SENT with date (in project root scripts/)
 
 ## Usage Examples
 
@@ -167,5 +145,4 @@ The skill will:
 2. Filter unsent leads
 3. Process requested number
 4. Send personalized emails
-5. Mark as green/SENT
-6. Generate summary report
+5. Generate summary report

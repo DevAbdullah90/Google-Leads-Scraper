@@ -20,7 +20,7 @@ import asyncio
 import logging
 import re
 import time
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from playwright.async_api import Page
@@ -35,11 +35,60 @@ _MAILTO_RE = re.compile(
     r'mailto:([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})',
     re.IGNORECASE,
 )
+_ANCHOR_HREF_RE = re.compile(
+    r'<a\s+(?:[^>]*?\s+)?href=["\']([^"\']+)["\']',
+    re.IGNORECASE,
+)
 
 _HTTPX_HEADERS = {
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Sec-Ch-Ua": '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Windows"',
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
 }
+
+
+def _extract_contact_links_from_html(html: str, base_url: str) -> list[str]:
+    """Extract candidate sub-page relative paths from homepage anchor links (<a href="...">)."""
+    if not html:
+        return []
+    keywords = ("contact", "about", "team", "reach", "connect", "privacy", "impressum", "agent")
+    candidate_paths: list[str] = []
+    seen: set[str] = set()
+
+    try:
+        base_domain = urlparse(base_url).netloc.lower().lstrip("www.")
+    except Exception:
+        return []
+
+    for href in _ANCHOR_HREF_RE.findall(html):
+        href_clean = href.strip()
+        if not href_clean or href_clean.startswith(("#", "javascript:", "mailto:", "tel:")):
+            continue
+        try:
+            full_url = urljoin(base_url, href_clean)
+            parsed = urlparse(full_url)
+            link_domain = parsed.netloc.lower().lstrip("www.")
+            if link_domain and link_domain != base_domain:
+                continue
+            path = parsed.path
+            if not path or path == "/" or path in seen:
+                continue
+            path_lower = path.lower()
+            if any(kw in path_lower for kw in keywords):
+                seen.add(path)
+                candidate_paths.append(path)
+        except Exception:
+            continue
+
+    return candidate_paths
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -127,7 +176,7 @@ async def extract_email(
 
     if page is not None:
         logger.debug("[email] httpx found nothing — trying Playwright fallback…")
-        email = await _extract_via_playwright(page, website_url)
+        email = await _extract_via_playwright(page, website_url, prefetched_html=prefetched_html)
         if email:
             logger.info(
                 "[email] Found via Playwright in %.1fs: %s",
@@ -153,34 +202,35 @@ async def _extract_via_httpx(
     prefetched_html: str | None = None,
 ) -> str | None:
     """
-    Scan homepage + common sub-pages using httpx.
-
-    If prefetched_html is provided, the homepage is already scanned — only
-    sub-pages are fetched (saving one full HTTP round-trip).
-    Sub-pages are fetched in parallel for speed.
+    Scan homepage + dynamic anchor links + common sub-pages using httpx.
     """
+    homepage_html = prefetched_html
+    pages_already_tried = 0
+
     # ── Step 1: try prefetched homepage HTML first ────────────────────────────
-    if prefetched_html:
-        email = _find_email_in_html(prefetched_html, source="homepage (prefetched)")
+    if homepage_html:
+        email = _find_email_in_html(homepage_html, source="homepage (prefetched)")
         if email:
             return email
-        logger.debug("[email/httpx] Prefetched HTML had no email — trying sub-pages…")
-        # Homepage already counted as page 1
+        logger.debug("[email/httpx] Prefetched HTML had no email — harvesting sub-page links…")
         pages_already_tried = 1
-    else:
-        pages_already_tried = 0
 
-    # ── Step 2: fetch remaining sub-pages ────────────────────────────────────
+    # ── Step 2: Assemble sub-page targets (dynamic anchor links + common paths) ──
+    dynamic_paths = _extract_contact_links_from_html(homepage_html or "", base_url)
+    combined_paths: list[str] = []
+    seen: set[str] = set()
+
+    for p in dynamic_paths + EMAIL_COMMON_PATHS:
+        if p not in seen:
+            seen.add(p)
+            combined_paths.append(p)
+
     remaining_slots = MAX_EMAIL_PAGES - pages_already_tried
     if remaining_slots <= 0:
         logger.debug("[email/httpx] No sub-page slots remaining after homepage")
         return None
 
-    sub_paths = EMAIL_COMMON_PATHS[:remaining_slots]
-    logger.debug(
-        "[email/httpx] Scanning %d sub-pages in parallel for %s…",
-        len(sub_paths), base_url,
-    )
+    sub_paths = combined_paths[:remaining_slots]
 
     try:
         async with httpx.AsyncClient(
@@ -190,9 +240,7 @@ async def _extract_via_httpx(
             verify=False,
         ) as client:
 
-            # If no prefetched HTML, fetch homepage first (sequential — need to
-            # confirm site is reachable before firing parallel sub-page requests)
-            if not prefetched_html:
+            if not homepage_html:
                 try:
                     resp = await client.get(base_url)
                     size_kb = len(resp.content) / 1024
@@ -204,34 +252,31 @@ async def _extract_via_httpx(
                         logger.warning("[email/httpx] Response too large (%.1f KB) — skipping %s", size_kb, base_url)
                         return None
                     if resp.status_code < 400:
-                        email = _find_email_in_html(resp.text, source="homepage")
+                        homepage_html = resp.text
+                        email = _find_email_in_html(homepage_html, source="homepage")
                         if email:
                             return email
-                    else:
-                        logger.debug(
-                            "[email/httpx] Homepage returned HTTP %d — skipping sub-pages",
-                            resp.status_code,
-                        )
-                        return None
-                except httpx.ConnectError as e:
-                    logger.debug(
-                        "[email/httpx] Cannot connect to %s: %s — skipping all pages",
-                        base_url, e,
-                    )
-                    return None
-                except httpx.TimeoutException:
-                    logger.debug(
-                        "[email/httpx] Timeout on homepage %s (limit=%.1fs)",
-                        base_url, EMAIL_TIMEOUT,
-                    )
-                    return None
+                        # Harvest anchor links from freshly fetched homepage HTML
+                        dynamic_paths = _extract_contact_links_from_html(homepage_html, base_url)
+                        combined_paths = []
+                        seen = set()
+                        for p in dynamic_paths + EMAIL_COMMON_PATHS:
+                            if p not in seen:
+                                seen.add(p)
+                                combined_paths.append(p)
+                        sub_paths = combined_paths[:remaining_slots]
                 except Exception as e:
-                    logger.debug("[email/httpx] Homepage error for %s: %s", base_url, e)
-                    return None
+                    logger.debug("[email/httpx] Homepage fetch error for %s: %s", base_url, e)
 
             # ── Parallel sub-page scan ────────────────────────────────────────
-            email = await _scan_subpages_parallel(client, base_url, sub_paths)
-            return email
+            if sub_paths:
+                logger.debug(
+                    "[email/httpx] Scanning %d sub-pages in parallel for %s: %s",
+                    len(sub_paths), base_url, sub_paths,
+                )
+                email = await _scan_subpages_parallel(client, base_url, sub_paths)
+                if email:
+                    return email
 
     except Exception as e:
         logger.debug("[email/httpx] Session-level error for %s: %s", base_url, e)
@@ -246,7 +291,6 @@ async def _scan_subpages_parallel(
 ) -> str | None:
     """
     Fetch all sub-pages concurrently and return the first email found.
-    Replaces sequential scanning — all pages fire at once instead of one-by-one.
     """
     async def _fetch_one(path: str) -> str | None:
         url = urljoin(base_url, path)
@@ -257,7 +301,6 @@ async def _scan_subpages_parallel(
                 "[email/httpx] GET %s → %d (%.1f KB)", url, resp.status_code, size_kb
             )
             if len(resp.content) > 5 * 1024 * 1024:
-                logger.warning("[email/httpx] Response too large (%.1f KB) — skipping %s", size_kb, url)
                 return None
             if resp.status_code < 400:
                 return _find_email_in_html(resp.text, source=path)
@@ -277,14 +320,54 @@ async def _scan_subpages_parallel(
 # Playwright fallback (JS-heavy sites)
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def _extract_via_playwright(page: Page, base_url: str) -> str | None:
-    """Use the Playwright page to scan the website for emails."""
+def _is_bot_challenge_html(html: str) -> bool:
+    """Return True if HTML response is a bot-protection or captcha challenge stub."""
+    if not html or len(html) < 200:
+        return True
+    if len(html) < 20000:
+        lower = html.lower()
+        if any(term in lower for term in ("just a moment...", "enable javascript", "cloudflare", "attention required!", "ddos-guard", "verify you are human")):
+            return True
+    return False
+
+
+async def _extract_via_playwright(
+    page: Page,
+    base_url: str,
+    prefetched_html: str | None = None,
+) -> str | None:
+    """Use Playwright page to scan JS-rendered website for emails with domcontentloaded wait strategy."""
     logger.debug("[email/playwright] Navigating to %s…", base_url)
+    timeout_ms = int(EMAIL_TIMEOUT * 1000)
+
     try:
-        await page.goto(base_url, wait_until="load", timeout=int(EMAIL_TIMEOUT * 1000))
-        # Scroll to bottom to trigger lazy-loaded footers where emails often live
+        # domcontentloaded is much faster and reliable for JS-heavy sites than 'load'
+        try:
+            await page.goto(base_url, wait_until="domcontentloaded", timeout=timeout_ms)
+        except Exception:
+            # Fallback to commit if domcontentloaded times out
+            await page.goto(base_url, wait_until="commit", timeout=timeout_ms)
+
         await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        await asyncio.sleep(1.0)  # Short wait for any lazy-loading
+        await asyncio.sleep(1.5)  # Wait for JS hydration & footer rendering
+
+        # 1. Check live DOM mailto hrefs (catches JS-injected mailto links)
+        try:
+            mailto_hrefs = await page.eval_on_selector_all(
+                'a[href*="mailto:"]',
+                'els => els.map(e => e.href)'
+            )
+            for raw_href in mailto_hrefs:
+                m = _MAILTO_RE.search(raw_href)
+                if m:
+                    v = validate_email(m.group(1))
+                    if v:
+                        logger.debug("[email/playwright] Found via live DOM mailto href: %s", v)
+                        return v
+        except Exception as e:
+            logger.debug("[email/playwright] DOM mailto query error: %s", e)
+
+        # 2. Check full HTML content
         html = await page.content()
         logger.debug("[email/playwright] Homepage loaded (%d chars)", len(html))
 
@@ -292,26 +375,50 @@ async def _extract_via_playwright(page: Page, base_url: str) -> str | None:
         if email:
             return email
 
-        # Directly navigate to contact/about pages in Playwright
-        # Use first 4 paths from EMAIL_COMMON_PATHS for more thorough search
-        playwright_paths = EMAIL_COMMON_PATHS[:4]
+        # 3. Check rendered inner text of the page body
+        try:
+            body_text = await page.inner_text("body")
+            email = _find_email_in_html(body_text, source="homepage inner_text (playwright)")
+            if email:
+                return email
+        except Exception:
+            pass
+
+        # Harvest dynamic links inside Playwright
+        dynamic_paths = _extract_contact_links_from_html(html, base_url)
+        combined_paths: list[str] = []
+        seen: set[str] = set()
+        for p in dynamic_paths + EMAIL_COMMON_PATHS:
+            if p not in seen:
+                seen.add(p)
+                combined_paths.append(p)
+
+        playwright_paths = combined_paths[:4]
         for path in playwright_paths:
             sub_url = urljoin(base_url, path)
             try:
                 resp = await page.goto(
-                    sub_url, wait_until="load", timeout=int(EMAIL_TIMEOUT * 1000)
+                    sub_url, wait_until="domcontentloaded", timeout=timeout_ms
                 )
                 if resp and resp.status < 400:
-                    # Scroll for sub-pages too
                     await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    await asyncio.sleep(0.5)
-                    html = await page.content()
+                    await asyncio.sleep(1.0)
+                    sub_html = await page.content()
                     logger.debug(
-                        "[email/playwright] %s loaded (%d chars)", path, len(html)
+                        "[email/playwright] %s loaded (%d chars)", path, len(sub_html)
                     )
-                    email = _find_email_in_html(html, source=f"{path} (playwright)")
+                    email = _find_email_in_html(sub_html, source=f"{path} (playwright)")
                     if email:
                         return email
+
+                    # Also check inner_text of sub-page
+                    try:
+                        sub_text = await page.inner_text("body")
+                        email = _find_email_in_html(sub_text, source=f"{path} inner_text (playwright)")
+                        if email:
+                            return email
+                    except Exception:
+                        pass
                 else:
                     logger.debug("[email/playwright] %s → HTTP %s", path, resp.status if resp else "?")
             except Exception as e:
@@ -329,9 +436,11 @@ async def _extract_via_playwright(page: Page, base_url: str) -> str | None:
 
 def _find_email_in_html(html: str, *, source: str = "") -> str | None:
     """
-    Scan HTML for email addresses, preferring mailto: links.
-    Logs candidate counts and the accepted email.
+    Scan HTML for email addresses, preferring mailto: links and Cloudflare de-obfuscation.
     """
+    if not html:
+        return None
+
     src_tag = f" [{source}]" if source else ""
 
     # 1. mailto: links (most reliable — deliberate disclosure)
@@ -340,14 +449,15 @@ def _find_email_in_html(html: str, *, source: str = "") -> str | None:
     for raw in mailto_hits:
         email = validate_email(raw)
         if email:
-            logger.debug("[email] ✓ Accepted from mailto:%s%s → %s", src_tag, src_tag, email)
+            logger.debug("[email] ✓ Accepted from mailto:%s → %s", src_tag, email)
             return email
 
-    # 2. Full text regex scan
+    # 2. Full text scan (includes Cloudflare decoding, HTML unescaping & obfuscation replacement)
     emails = find_emails_in_text(html)
     if emails:
-        logger.debug("[email] ✓ Accepted from regex scan%s → %s", src_tag, emails[0])
+        logger.debug("[email] ✓ Accepted from text scan%s → %s", src_tag, emails[0])
         return emails[0]
 
     logger.debug("[email] No valid email found%s", src_tag)
     return None
+

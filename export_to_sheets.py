@@ -112,18 +112,66 @@ def main():
         worksheet_title = "Scraped Leads"
         try:
             worksheet = spreadsheet.worksheet(worksheet_title)
-            print(f"Found existing worksheet '{worksheet_title}'. Clearing all content...")
-            worksheet.clear()
+            print(f"Found existing worksheet '{worksheet_title}'.")
         except gspread.exceptions.WorksheetNotFound:
             worksheet = spreadsheet.add_worksheet(title=worksheet_title, rows=1000, cols=10)
             print(f"Created new worksheet '{worksheet_title}'.")
+            # Write headers only for new worksheet
+            print("Writing headers...")
+            worksheet.append_row(headers)
             
-        # Write headers
-        print("Writing headers...")
-        worksheet.append_row(headers)
-            
-        print(f"Appending {len(rows)} rows to the sheet...")
-        worksheet.append_rows(rows, value_input_option="USER_ENTERED")
+        # Check existing data in worksheet for deduplication
+        existing_data = worksheet.get_all_values()
+        if len(existing_data) <= 1:
+            print("Writing headers...")
+            worksheet.append_row(headers)
+            existing_data = [headers]
+
+        # Build lookup sets for fast O(1) deduplication (Phone & Google Maps URL)
+        existing_phones: set[str] = set()
+        existing_urls: set[str] = set()
+
+        for r in existing_data[1:]:
+            if len(r) > 1 and r[1]:
+                p = r[1].lstrip("'").strip()
+                if p:
+                    existing_phones.add(p)
+            if len(r) > 8 and r[8]:
+                u = r[8].strip()
+                if u:
+                    existing_urls.add(u)
+
+        # Filter rows to only append new unique leads
+        new_rows = []
+        skipped_count = 0
+        for r in rows:
+            p_val = r[1].lstrip("'").strip()
+            u_val = r[8].strip()
+
+            is_dup = False
+            if p_val and p_val in existing_phones:
+                is_dup = True
+            elif u_val and u_val in existing_urls:
+                is_dup = True
+
+            if is_dup:
+                skipped_count += 1
+            else:
+                new_rows.append(r)
+                if p_val:
+                    existing_phones.add(p_val)
+                if u_val:
+                    existing_urls.add(u_val)
+
+        if skipped_count > 0:
+            print(f"[Deduplication] Skipped {skipped_count} lead(s) already present in Google Sheet.")
+
+        if not new_rows:
+            print("All leads in this file already exist in your Google Sheet! No new rows appended.")
+            return
+
+        print(f"Appending {len(new_rows)} new unique lead(s) to the sheet...")
+        worksheet.append_rows(new_rows, value_input_option="USER_ENTERED")
         
         print(f"Success! View your Google Sheet at: https://docs.google.com/spreadsheets/d/{args.spreadsheet_id}")
         

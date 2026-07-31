@@ -63,17 +63,31 @@ PAGE_LOAD_TIMEOUT: int = 30_000  # ms
 ELEMENT_WAIT_TIMEOUT: int = 10_000  # ms
 
 # === EMAIL EXTRACTION ===
-EMAIL_TIMEOUT: float = 6.0   # reduced from 10.0 — sites taking >6s are blocking scrapers anyway
+EMAIL_TIMEOUT: float = 20.0  # 20s allows JS-heavy site rendering (Elementor/Wix/Single Page Apps)
 EMAIL_COMMON_PATHS: list[str] = [
     "/contact",
     "/contact-us",
+    "/contactus",
+    "/contact-me",
+    "/about",
+    "/about-us",
+    "/team",
+    "/our-team",
+    "/get-in-touch",
+    "/reach-us",
+    "/connect",
+    "/privacy",
+    "/privacy-policy",
+    "/impressum",
 ]
-MAX_EMAIL_PAGES: int = 3  # reduced from 8 — homepage + 2 sub-pages is sufficient; more is diminishing returns
+MAX_EMAIL_PAGES: int = 6  # homepage + top 5 sub-pages
 
 # Pages to scan for social media links in addition to homepage
 SOCIAL_SCAN_PATHS: list[str] = [
     "/contact",
     "/contact-us",
+    "/about",
+    "/about-us",
 ]
 
 # === REVIEWS ===

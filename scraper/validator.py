@@ -7,6 +7,7 @@ accepted or rejected without adding print statements.
 
 from __future__ import annotations
 
+import html
 import logging
 import re
 from urllib.parse import urlparse
@@ -20,6 +21,9 @@ logger = logging.getLogger(__name__)
 _PHONE_RE   = re.compile(r"^\+?[\d\s\-\(\)\.ext]{7,25}$", re.IGNORECASE)
 _EMAIL_RE   = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
 _EMAIL_SCAN = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
+_CF_EMAIL_RE = re.compile(r'data-cfemail=["\']([0-9a-fA-F]+)["\']')
+_OBFUSCATED_AT_RE = re.compile(r"\s*(?:\[|\()?(?:at|AT)(?:\]|\))?\s*")
+_OBFUSCATED_DOT_RE = re.compile(r"\s*(?:\[|\()?(?:dot|DOT)(?:\]|\))?\s*")
 
 # TLDs that are image/binary/code file extensions — never valid email TLDs.
 # These appear in regex matches when email-like patterns occur in image filenames
@@ -250,13 +254,61 @@ def parse_review_count(text: str | None) -> int | None:
     return None
 
 
-def find_emails_in_text(text: str) -> list[str]:
-    """Scan arbitrary text and return all validated emails found."""
-    raw_matches = _EMAIL_SCAN.findall(text)
-    valid = [e for e in (validate_email(r) for r in raw_matches) if e]
-    if raw_matches:
-        logger.debug(
-            "find_emails_in_text: found %d raw candidates, %d passed validation",
-            len(raw_matches), len(valid),
+def decode_cloudflare_email(cfemail: str) -> str | None:
+    """Decode a Cloudflare hex-encoded email string (from data-cfemail attribute)."""
+    try:
+        if not cfemail or len(cfemail) < 4:
+            return None
+        r = int(cfemail[:2], 16)
+        email = "".join(
+            chr(int(cfemail[i:i + 2], 16) ^ r)
+            for i in range(2, len(cfemail), 2)
         )
-    return valid
+        return validate_email(email)
+    except Exception as e:
+        logger.debug("decode_cloudflare_email: failed for %r — %s", cfemail, e)
+        return None
+
+
+def find_emails_in_text(text: str) -> list[str]:
+    """Scan arbitrary text and return all validated emails found, decoding Cloudflare & HTML entities."""
+    if not text:
+        return []
+
+    # 1. Unescape HTML entities (&amp;, &#64;, etc.)
+    clean_text = html.unescape(text)
+
+    valid_emails: list[str] = []
+    seen: set[str] = set()
+
+    # 2. Check for Cloudflare obfuscated emails (data-cfemail)
+    for cf_hex in _CF_EMAIL_RE.findall(text):
+        decoded = decode_cloudflare_email(cf_hex)
+        if decoded and decoded not in seen:
+            seen.add(decoded)
+            valid_emails.append(decoded)
+
+    # 3. Scan standard email regex pattern
+    raw_matches = _EMAIL_SCAN.findall(clean_text)
+    for raw in raw_matches:
+        v = validate_email(raw)
+        if v and v not in seen:
+            seen.add(v)
+            valid_emails.append(v)
+
+    # 4. Check for text-obfuscated emails (e.g., info [at] example [dot] com)
+    if not valid_emails and (" [at] " in clean_text or " (at) " in clean_text or " AT " in clean_text):
+        deobfuscated = _OBFUSCATED_AT_RE.sub("@", clean_text)
+        deobfuscated = _OBFUSCATED_DOT_RE.sub(".", deobfuscated)
+        for raw in _EMAIL_SCAN.findall(deobfuscated):
+            v = validate_email(raw)
+            if v and v not in seen:
+                seen.add(v)
+                valid_emails.append(v)
+
+    if valid_emails:
+        logger.debug(
+            "find_emails_in_text: found %d valid emails (%d raw candidates)",
+            len(valid_emails), len(raw_matches),
+        )
+    return valid_emails
