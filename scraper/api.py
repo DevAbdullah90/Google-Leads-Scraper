@@ -47,6 +47,7 @@ from scraper.recovery import (
     save_progress,
 )
 from scraper.scroll import collect_business_urls
+from scraper.sheets_sync import fetch_sheet_existing_urls
 from scraper.utils import format_duration, log_section, log_subsection, random_delay
 
 logger = logging.getLogger(__name__)
@@ -875,9 +876,15 @@ class GoogleMapsScraper:
             await random_delay(300, 900)
             return []
 
-        # ── Collect business URLs ───────────────────────────────────────────
+        # ── Collect business URLs with Google Sheet pre-scrape skipping ──────
+        logger.info("Checking Google Sheet history for pre-scrape skipping…")
+        sheet_skipped = fetch_sheet_existing_urls()
+        combined_skipped = set(skipped_urls) | sheet_skipped
+
         logger.info("Collecting business URLs (max=%s)…", max_results or "unlimited")
-        business_urls = await collect_business_urls(page, max_results=max_results)
+        business_urls = await collect_business_urls(
+            page, max_results=max_results, skipped_urls=combined_skipped
+        )
 
         if not business_urls:
             logger.warning("No business URLs found for query: %r", query)
@@ -887,7 +894,7 @@ class GoogleMapsScraper:
             )
             return []
 
-        to_scrape = [u for u in business_urls if u not in skipped_urls]
+        to_scrape = [u for u in business_urls if u not in combined_skipped]
         skipped_count = len(business_urls) - len(to_scrape)
         total = len(to_scrape)
 
