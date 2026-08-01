@@ -1,0 +1,76 @@
+# Google Leads Scraper - Real Estate Queries List
+
+# --- Ontario, Canada ---
+real estate agents in Mississauga, ON
+real estate agencies in Mississauga, ON
+realtors in Mississauga, ON
+real estate brokers in Mississauga, ON
+commercial real estate in Mississauga, ON
+real estate agents in Toronto, ON
+real estate agencies in Toronto, ON
+realtors in Toronto, ON
+real estate brokers in Toronto, ON
+luxury real estate agents in Toronto, ON
+commercial real estate in Toronto, ON
+property management companies in Toronto, ON
+real estate agents in Brampton, ON
+realtors in Brampton, ON
+real estate agencies in Brampton, ON
+real estate agents in Vaughan, ON
+realtors in Markham, ON
+real estate agents in Oakville, ON
+realtors in Burlington, ON
+real estate agents in Hamilton, ON
+real estate agents in Ottawa, ON
+realtors in Ottawa, ON
+real estate agencies in London, ON
+real estate agents in Kitchener, ON
+
+# --- British Columbia & Western Canada ---
+real estate agents in Vancouver, BC
+real estate agencies in Vancouver, BC
+realtors in Vancouver, BC
+luxury real estate agents in Vancouver, BC
+real estate agents in Burnaby, BC
+realtors in Surrey, BC
+real estate agents in Victoria, BC
+real estate agents in Calgary, AB
+real estate agencies in Calgary, AB
+realtors in Calgary, AB
+real estate agents in Edmonton, AB
+realtors in Edmonton, AB
+
+# --- Quebec & Atlantic Canada ---
+real estate agents in Halifax, NS
+realtors in Halifax, NS
+real estate agents in Montreal, QC
+real estate agencies in Montreal, QC
+realtors in Montreal, QC
+real estate agents in Quebec City, QC
+
+# --- United States (Top Markets) ---
+real estate agents in New York, NY
+real estate agencies in New York, NY
+luxury real estate agents in New York, NY
+real estate agents in Los Angeles, CA
+real estate agencies in Los Angeles, CA
+luxury real estate agents in Beverly Hills, CA
+real estate agents in Miami, FL
+real estate agencies in Miami, FL
+realtors in Orlando, FL
+real estate agents in Chicago, IL
+real estate agencies in Chicago, IL
+real estate agents in Houston, TX
+real estate agents in Dallas, TX
+real estate agents in Austin, TX
+real estate agents in Phoenix, AZ
+real estate agents in Seattle, WA
+real estate agents in Las Vegas, NV
+
+# --- International Markets ---
+real estate agents in London, UK
+real estate agencies in London, UK
+real estate agencies in Dubai, UAE
+property brokers in Dubai, UAE
+real estate agents in Sydney, Australia
+real estate agencies in Melbourne, Australia
