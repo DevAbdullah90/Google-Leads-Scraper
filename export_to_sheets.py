@@ -23,7 +23,8 @@ def main():
     parser.add_argument("input_file", nargs="?", help="Path to the scraped leads JSON file (defaults to the latest file in output/)")
     parser.add_argument("--spreadsheet-id", default="1-pNAcHLkZtERS3KZqSt9l-wPb0QIXdXDgSdCtmSAnGk", help="Google Sheet ID")
     parser.add_argument("--creds-file", default="credentials.json", help="Path to Google Service Account credentials JSON")
-    
+    parser.add_argument("--tab", "--worksheet", default="Scraped Leads", help="Target worksheet/tab name (e.g. 'Real Estate', 'Dental Clinics')")
+
     args = parser.parse_args()
     
     # 1. Determine JSON file to upload
@@ -108,11 +109,11 @@ def main():
         print(f"Opening Spreadsheet ID: {args.spreadsheet_id}")
         spreadsheet = client.open_by_key(args.spreadsheet_id)
         
-        # Get or create worksheet
-        worksheet_title = "Scraped Leads"
+        # Get or create target worksheet tab
+        worksheet_title = args.tab
         try:
             worksheet = spreadsheet.worksheet(worksheet_title)
-            print(f"Found existing worksheet '{worksheet_title}'.")
+            print(f"Found existing worksheet tab '{worksheet_title}'.")
         except gspread.exceptions.WorksheetNotFound:
             worksheet = spreadsheet.add_worksheet(title=worksheet_title, rows=1000, cols=10)
             print(f"Created new worksheet '{worksheet_title}'.")

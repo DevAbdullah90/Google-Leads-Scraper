@@ -44,6 +44,68 @@ def is_sent_status(row: list[str]) -> bool:
             return True
     return False
 
+def clean_worksheet_tab(worksheet) -> int:
+    """Deduplicate a single worksheet tab."""
+    all_rows = worksheet.get_all_values()
+    if not all_rows or len(all_rows) <= 1:
+        print(f"Tab '{worksheet.title}': No data rows to clean.")
+        return 0
+
+    header = all_rows[0]
+    data_rows = all_rows[1:]
+    total_input_rows = len(data_rows)
+
+    seen_phones: set[str] = set()
+    seen_urls: set[str] = set()
+    seen_names: set[str] = set()
+    unique_rows: list[list[str]] = []
+    duplicate_count = 0
+
+    for r in data_rows:
+        name_val = r[0].strip() if len(r) > 0 else ""
+        phone_val = clean_phone(r[1]) if len(r) > 1 else ""
+        url_val = r[8].strip() if len(r) > 8 else ""
+
+        is_dup = False
+
+        if is_valid_key(url_val) and url_val in seen_urls:
+            is_dup = True
+        elif is_valid_key(phone_val) and phone_val in seen_phones:
+            is_dup = True
+        elif (not is_valid_key(phone_val) and not is_valid_key(url_val)) and is_valid_key(name_val) and name_val in seen_names:
+            is_dup = True
+
+        if is_dup:
+            if is_sent_status(r):
+                for idx, ex in enumerate(unique_rows):
+                    ex_name = ex[0].strip() if len(ex) > 0 else ""
+                    ex_p = clean_phone(ex[1]) if len(ex) > 1 else ""
+                    ex_u = ex[8].strip() if len(ex) > 8 else ""
+                    if (is_valid_key(url_val) and ex_u == url_val) or \
+                       (is_valid_key(phone_val) and ex_p == phone_val) or \
+                       (is_valid_key(name_val) and ex_name == name_val):
+                        unique_rows[idx] = r
+                        break
+            duplicate_count += 1
+        else:
+            unique_rows.append(r)
+            if is_valid_key(phone_val):
+                seen_phones.add(phone_val)
+            if is_valid_key(url_val):
+                seen_urls.add(url_val)
+            if is_valid_key(name_val):
+                seen_names.add(name_val)
+
+    if duplicate_count > 0:
+        final_table = [header] + unique_rows
+        worksheet.clear()
+        worksheet.update(range_name="A1", values=final_table, value_input_option="USER_ENTERED")
+        print(f"Tab '{worksheet.title}': Analyzed {total_input_rows} rows | Removed {duplicate_count} duplicates | Kept {len(unique_rows)} unique leads")
+    else:
+        print(f"Tab '{worksheet.title}': 100% clean ({total_input_rows} rows, 0 duplicates)")
+
+    return duplicate_count
+
 def main():
     parser = argparse.ArgumentParser(description="Clean duplicate leads from Master Google Sheet.")
     parser.add_argument(
@@ -57,9 +119,14 @@ def main():
         help="Path to Google Service Account credentials JSON"
     )
     parser.add_argument(
-        "--worksheet",
+        "--tab", "--worksheet",
         default="Scraped Leads",
-        help="Worksheet name to clean"
+        help="Target worksheet tab to clean"
+    )
+    parser.add_argument(
+        "--all-tabs",
+        action="store_true",
+        help="Clean all worksheet tabs in the Google Sheet"
     )
 
     args = parser.parse_args()
@@ -82,85 +149,21 @@ def main():
         print(f"Opening Master Spreadsheet ID: {args.spreadsheet_id}")
         spreadsheet = client.open_by_key(args.spreadsheet_id)
 
-        try:
-            worksheet = spreadsheet.worksheet(args.worksheet)
-            print(f"Connected to worksheet '{args.worksheet}'.")
-        except gspread.exceptions.WorksheetNotFound:
-            worksheet = spreadsheet.get_worksheet(0)
-            print(f"Worksheet '{args.worksheet}' not found — using first worksheet '{worksheet.title}'.")
+        if args.all_tabs:
+            print("\n[Deduplicating ALL Worksheet Tabs in Google Sheet]")
+            worksheets = spreadsheet.worksheets()
+            total_removed = 0
+            for ws in worksheets:
+                total_removed += clean_worksheet_tab(ws)
+            print(f"\nCompleted cleaning all tabs! Total duplicates removed: {total_removed}")
+        else:
+            try:
+                worksheet = spreadsheet.worksheet(args.tab)
+                clean_worksheet_tab(worksheet)
+            except gspread.exceptions.WorksheetNotFound:
+                print(f"Worksheet '{args.tab}' not found.")
 
-        all_rows = worksheet.get_all_values()
-        if not all_rows or len(all_rows) <= 1:
-            print("Sheet has no data rows to clean!")
-            return
-
-        header = all_rows[0]
-        data_rows = all_rows[1:]
-        total_input_rows = len(data_rows)
-        print(f"Analyzing {total_input_rows} total lead rows in Google Sheet...")
-
-        # Track seen Phone numbers, Google Maps URLs, and Business Names
-        seen_phones: set[str] = set()
-        seen_urls: set[str] = set()
-        seen_names: set[str] = set()
-        unique_rows: list[list[str]] = []
-        duplicate_count = 0
-
-        for r in data_rows:
-            name_val = r[0].strip() if len(r) > 0 else ""
-            phone_val = clean_phone(r[1]) if len(r) > 1 else ""
-            url_val = r[8].strip() if len(r) > 8 else ""
-
-            is_dup = False
-
-            if is_valid_key(url_val) and url_val in seen_urls:
-                is_dup = True
-            elif is_valid_key(phone_val) and phone_val in seen_phones:
-                is_dup = True
-            elif (not is_valid_key(phone_val) and not is_valid_key(url_val)) and is_valid_key(name_val) and name_val in seen_names:
-                is_dup = True
-
-            if is_dup:
-                # If this duplicate happens to have a SENT status while the previous didn't,
-                # replace the un-sent entry with this sent entry
-                if is_sent_status(r):
-                    for idx, ex in enumerate(unique_rows):
-                        ex_name = ex[0].strip() if len(ex) > 0 else ""
-                        ex_p = clean_phone(ex[1]) if len(ex) > 1 else ""
-                        ex_u = ex[8].strip() if len(ex) > 8 else ""
-                        if (is_valid_key(url_val) and ex_u == url_val) or \
-                           (is_valid_key(phone_val) and ex_p == phone_val) or \
-                           (is_valid_key(name_val) and ex_name == name_val):
-                            unique_rows[idx] = r
-                            break
-                duplicate_count += 1
-            else:
-                unique_rows.append(r)
-                if is_valid_key(phone_val):
-                    seen_phones.add(phone_val)
-                if is_valid_key(url_val):
-                    seen_urls.add(url_val)
-                if is_valid_key(name_val):
-                    seen_names.add(name_val)
-
-        if duplicate_count == 0:
-            print("Sheet is 100% clean! No duplicate rows were found.")
-            return
-
-        print(f"\n[Deduplication Summary]")
-        print(f"  - Total input rows  : {total_input_rows}")
-        print(f"  - Duplicates removed: {duplicate_count}")
-        print(f"  - Unique leads kept : {len(unique_rows)}")
-
-        # Overwrite worksheet with cleaned rows
-        print("\nUpdating Google Sheet with cleaned rows...")
-        final_table = [header] + unique_rows
-        
-        # Clear existing worksheet and write deduplicated table
-        worksheet.clear()
-        worksheet.update(range_name="A1", values=final_table, value_input_option="USER_ENTERED")
-
-        print(f"Success! Master Google Sheet deduplicated and updated.")
+        print(f"\nSuccess! Master Google Sheet updated.")
         print(f"View your Google Sheet: https://docs.google.com/spreadsheets/d/{args.spreadsheet_id}")
 
     except Exception as e:
