@@ -131,6 +131,11 @@ def main():
 
     args = parser.parse_args()
 
+    if not args.spreadsheet_id:
+        print("Error: No Google Spreadsheet ID provided!")
+        print("Please provide it via --spreadsheet-id <YOUR_SHEET_ID> or set GOOGLE_SHEETS_SPREADSHEET_ID in your environment.")
+        sys.exit(1)
+
     creds_path = Path(args.creds_file)
     if not creds_path.exists():
         print(f"Error: Credentials file '{creds_path}' not found.")
@@ -161,7 +166,10 @@ def main():
                 worksheet = spreadsheet.worksheet(args.tab)
                 clean_worksheet_tab(worksheet)
             except gspread.exceptions.WorksheetNotFound:
-                print(f"Worksheet '{args.tab}' not found.")
+                worksheet = spreadsheet.get_worksheet(0)
+                print(f"Tab '{args.tab}' not found. Cleaning main tab '{worksheet.title}'.")
+                clean_worksheet_tab(worksheet)
+
 
         print(f"\nSuccess! Master Google Sheet updated.")
         print(f"View your Google Sheet: https://docs.google.com/spreadsheets/d/{args.spreadsheet_id}")

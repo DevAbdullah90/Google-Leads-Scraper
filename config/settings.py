@@ -106,8 +106,8 @@ GOOGLE_MAPS_SEARCH_URL: str = "https://www.google.com/maps/search/{query}"
 GOOGLE_MAPS_BASE_URL: str = "https://www.google.com"
 
 # === GOOGLE SHEETS ===
-GOOGLE_SHEETS_SPREADSHEET_ID: str = "1-pNAcHLkZtERS3KZqSt9l-wPb0QIXdXDgSdCtmSAnGk"
-GOOGLE_SHEETS_URL: str = f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEETS_SPREADSHEET_ID}/edit"
+GOOGLE_SHEETS_SPREADSHEET_ID: str = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID", "")
+GOOGLE_SHEETS_URL: str = f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEETS_SPREADSHEET_ID}/edit" if GOOGLE_SHEETS_SPREADSHEET_ID else ""
 
 # === SCRAPER VERSION ===
 SCRAPER_VERSION: str = "1.0.0"

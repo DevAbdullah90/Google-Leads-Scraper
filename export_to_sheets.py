@@ -21,12 +21,18 @@ def get_latest_json_file(output_dir):
 def main():
     parser = argparse.ArgumentParser(description="Upload scraped leads from JSON to Google Sheets.")
     parser.add_argument("input_file", nargs="?", help="Path to the scraped leads JSON file (defaults to the latest file in output/)")
-    parser.add_argument("--spreadsheet-id", default="1-pNAcHLkZtERS3KZqSt9l-wPb0QIXdXDgSdCtmSAnGk", help="Google Sheet ID")
+    default_sheet_id = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID", "")
+    parser.add_argument("--spreadsheet-id", default=default_sheet_id, help="Google Sheet ID (or set GOOGLE_SHEETS_SPREADSHEET_ID env var)")
     parser.add_argument("--creds-file", default="credentials.json", help="Path to Google Service Account credentials JSON")
-    parser.add_argument("--tab", "--worksheet", default="Scraped Leads", help="Target worksheet/tab name (e.g. 'Real Estate', 'Dental Clinics')")
+    parser.add_argument("--tab", "--worksheet", default="Sheet1", help="Target worksheet/tab name (defaults to 'Sheet1')")
 
     args = parser.parse_args()
     
+    if not args.spreadsheet_id:
+        print("Error: No Google Spreadsheet ID provided!")
+        print("Please provide it via --spreadsheet-id <YOUR_SHEET_ID> or set GOOGLE_SHEETS_SPREADSHEET_ID in your environment.")
+        sys.exit(1)
+
     # 1. Determine JSON file to upload
     if args.input_file:
         json_path = Path(args.input_file)
@@ -109,17 +115,15 @@ def main():
         print(f"Opening Spreadsheet ID: {args.spreadsheet_id}")
         spreadsheet = client.open_by_key(args.spreadsheet_id)
         
-        # Get or create target worksheet tab
+        # Get target worksheet tab or fallback to default first sheet
         worksheet_title = args.tab
         try:
             worksheet = spreadsheet.worksheet(worksheet_title)
-            print(f"Found existing worksheet tab '{worksheet_title}'.")
+            print(f"Found worksheet tab '{worksheet.title}'.")
         except gspread.exceptions.WorksheetNotFound:
-            worksheet = spreadsheet.add_worksheet(title=worksheet_title, rows=1000, cols=10)
-            print(f"Created new worksheet '{worksheet_title}'.")
-            # Write headers only for new worksheet
-            print("Writing headers...")
-            worksheet.append_row(headers)
+            worksheet = spreadsheet.get_worksheet(0)
+            print(f"Tab '{worksheet_title}' not found. Using main worksheet '{worksheet.title}'.")
+
             
         # Check existing data in worksheet for deduplication
         existing_data = worksheet.get_all_values()
