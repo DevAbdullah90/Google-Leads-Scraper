@@ -10,3 +10,4 @@ alembic>=1.13.0
 pandas
 openpyxl
 setuptools
+python-dotenv

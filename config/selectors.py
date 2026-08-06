@@ -92,6 +92,15 @@ REVIEW_COUNT_SELECTORS: list[str] = [
     "span.UY7F9",            # legacy class name (still present on some layouts)
     'button[jsaction*="pane.rating"] span.UY7F9',
     'div[jsaction*="pane.rating"] span.UY7F9',
+    # Newer Google Maps layouts (2025+)
+    'span[aria-label*="review"]',
+    'a[aria-label*="review"]',
+    'button[aria-label*="review"]',
+    '. fontBodyLarge span',  # review count in the overview panel
+    # JS-evaluated fallback: scan for "(N)" pattern near the rating stars
+    'span.ceNzKf',
+    '.MW4etd + span',
+    'div.fontBodyLarge span',
 ]
 
 # Full address text
@@ -184,6 +193,12 @@ DESCRIPTION_SELECTORS: list[str] = [
     '[data-section-id="description"] span',
     # Note: ".HlvSq" removed — it also matches the "reached end of list" text
     # on the search results page and causes false positives there.
+    # 2025+ layouts
+    'div[data-attrid*="description"]',
+    'span[data-attrid*="description"]',
+    '.LBgpqf',
+    '.m6QErb div.fontBodyMedium',
+    'div[role="main"] span.PYvSYb',
 ]
 
 # Price level (e.g., "$", "$$")
@@ -264,6 +279,15 @@ ATTRIBUTE_ITEM_SELECTORS: list[str] = [
     '[aria-label*="Planning"] span',
     # Fallback: any span inside the About panel container
     ".m6QErb[aria-label*='About'] span.fontBodyMedium",
+    # 2025+ layouts
+    'div[data-section-id="Amenities"] span',
+    'div[data-section-id="Highlights"] span',
+    'div[data-section-id="Service options"] span',
+    'div[data-section-id="Accessibility"] span',
+    'div[aria-label*="Amenities"] div.fontBodyMedium',
+    'div[aria-label*="Highlights"] div.fontBodyMedium',
+    '.e2moi div.fontBodyMedium',
+    '.CK16pd div.fontBodyMedium',
 ]
 
 # ============================================================
@@ -301,6 +325,12 @@ REVIEW_ITEM_SELECTORS: list[str] = [
     ".bwb7ce",
     ".d4r55 + div",   # review card starting after author name
     'div[data-google-review-count] .jftiEf',
+    # Newer Google Maps layouts
+    '.Rv6GBb',
+    '.Dh6h6e',
+    '.yDd9Nb',
+    'div[role="article"]',
+    'div[data-review-id]',
 ]
 
 # Review author name

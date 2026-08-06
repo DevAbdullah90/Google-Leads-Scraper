@@ -27,3 +27,8 @@ __pycache__/
 .playwright-mcp/
 .vscode/
 .idea/
+
+# MCP Setup Guides (private)
+ZOHO_MCP_SETUP_GUIDE.pdf
+ZOHO_MCP_SETUP_GUIDE.md
+GMAIL_MCP_SETUP_GUIDE.md

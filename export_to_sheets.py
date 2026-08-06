@@ -2,9 +2,13 @@ import os
 import sys
 import json
 import argparse
+from datetime import datetime
 from pathlib import Path
+from dotenv import load_dotenv
 import gspread
 from google.oauth2.service_account import Credentials
+
+load_dotenv()
 
 def get_latest_json_file(output_dir):
     """Find the most recently modified JSON file in the output directory."""
@@ -17,6 +21,43 @@ def get_latest_json_file(output_dir):
     # Sort by modification time, newest first
     json_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
     return json_files[0]
+
+
+def format_reviews_sample(reviews):
+    """Format the reviews_sample list into a readable string."""
+    if not reviews:
+        return ""
+    parts = []
+    for r in reviews:
+        author = r.get("author", "Anonymous")
+        rating = r.get("rating", "")
+        text = (r.get("text") or "")[:150]
+        date = r.get("date", "")
+        parts.append(f"{author} ({rating}★): {text} [{date}]")
+    return " | ".join(parts)
+
+
+def format_all_attributes(attributes):
+    """Combine all attribute lists into a single comma-separated string."""
+    if not attributes:
+        return ""
+    items = []
+    for key in ("amenities", "payments_accepted", "service_options", "highlights"):
+        vals = attributes.get(key, [])
+        if isinstance(vals, list):
+            for v in vals:
+                v = (v or "").strip()
+                if v and len(v) > 1 and not v.startswith("\ue5ca"):
+                    items.append(v)
+    # Deduplicate while preserving order
+    seen = set()
+    unique = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            unique.append(item)
+    return ", ".join(unique)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Upload scraped leads from JSON to Google Sheets.")
@@ -61,30 +102,64 @@ def main():
     print(f"Found {len(businesses)} leads to upload.")
     
     # 2. Extract and format rows
+    # Columns 0-8 are the original fields (kept at same indices for dedup)
+    # Columns 9+ are the new extended fields
     headers = [
-        "Business Name", 
-        "Phone", 
-        "Email", 
-        "Website", 
-        "Category", 
-        "Rating", 
-        "Reviews", 
-        "Full Address", 
-        "Google Maps URL"
+        "Business Name",       # 0
+        "Phone",               # 1
+        "Email",               # 2
+        "Website",             # 3
+        "Category",            # 4
+        "Rating",              # 5
+        "Reviews",             # 6
+        "Full Address",        # 7
+        "Google Maps URL",     # 8
+        # --- Extended fields ---
+        "Description",         # 9
+        "All Categories",      # 10
+        "Price Level",         # 11
+        "Years in Business",   # 12
+        "Facebook",            # 13
+        "Instagram",           # 14
+        "Twitter",             # 15
+        "LinkedIn",            # 16
+        "YouTube",             # 17
+        "TikTok",              # 18
+        "Attributes",          # 19
+        "Hours Status",        # 20
+        "Reviews Sample",      # 21
+        "Latitude",            # 22
+        "Longitude",           # 23
+        "Scraped Date",        # 24
+        "Scraped Time"         # 25
     ]
     
     rows = []
+    now = datetime.now()
+    scrape_date = now.strftime("%Y-%m-%d")
+    scrape_time = now.strftime("%H:%M:%S")
+
     for b in businesses:
         contact = b.get("contact", {})
         ratings = b.get("ratings", {})
         address = b.get("address", {})
         business_info = b.get("business_info", {})
-        
+        social = b.get("social_media", {})
+        attributes = b.get("attributes", {})
+        hours = b.get("hours", {})
+        coords = b.get("coordinates", {})
+        reviews_sample = b.get("reviews_sample", [])
+
         phone_val = contact.get("phone", "") or ""
         if phone_val.startswith("+") or phone_val.startswith("-") or phone_val.startswith("="):
             phone_val = f"'{phone_val}"
-            
+
+        all_cats = business_info.get("all_categories", [])
+        if isinstance(all_cats, list):
+            all_cats = ", ".join(all_cats)
+
         row = [
+            # 0-8: Original columns
             b.get("business_name", ""),
             phone_val,
             contact.get("email", "") or "",
@@ -93,7 +168,25 @@ def main():
             ratings.get("average_rating", "") or "",
             ratings.get("total_reviews", "") or "",
             address.get("full_address", "") or "",
-            b.get("google_maps_url", "")
+            b.get("google_maps_url", ""),
+            # 9-25: Extended columns
+            business_info.get("description", "") or "",
+            all_cats,
+            business_info.get("price_level", "") or "",
+            business_info.get("years_in_business", "") or "",
+            social.get("facebook", "") or "",
+            social.get("instagram", "") or "",
+            social.get("twitter", "") or "",
+            social.get("linkedin", "") or "",
+            social.get("youtube", "") or "",
+            social.get("tiktok", "") or "",
+            format_all_attributes(attributes),
+            hours.get("current_status", "") or "",
+            format_reviews_sample(reviews_sample),
+            coords.get("latitude", "") or "",
+            coords.get("longitude", "") or "",
+            scrape_date,
+            scrape_time,
         ]
         rows.append(row)
         
@@ -133,6 +226,7 @@ def main():
             existing_data = [headers]
 
         # Build lookup sets for fast O(1) deduplication (Phone & Google Maps URL)
+        # Phone is always at index 1, URL is always at index 8 — same as before
         existing_phones: set[str] = set()
         existing_urls: set[str] = set()
 

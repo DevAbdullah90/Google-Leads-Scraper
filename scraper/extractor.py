@@ -402,12 +402,12 @@ async def _extract_rating(page: Page) -> tuple[float | None, int | None]:
     if rating_text and avg is None:
         logger.debug("  [rating] raw text %r could not be parsed as a rating", rating_text)
 
-    # Step 1: wait up to 3 s for .lyplG to render (Google lazy-loads the count).
+    # Step 1: wait up to 5 s for .lyplG to render (Google lazy-loads the count).
     try:
-        await page.wait_for_selector(".lyplG:not(:empty)", timeout=3000)
+        await page.wait_for_selector(".lyplG:not(:empty)", timeout=5000)
         logger.debug("  [review_count] .lyplG populated")
     except Exception:
-        logger.debug("  [review_count] .lyplG still empty after 3 s (limited view or slow load)")
+        logger.debug("  [review_count] .lyplG still empty after 5 s (limited view or slow load)")
 
     # Step 2: try CSS selectors for visible count text only — no aria-labels.
     # Visible text (e.g. "(268)") is the canonical displayed count.
@@ -451,6 +451,18 @@ async def _extract_rating(page: Page) -> tuple[float | None, int | None]:
                     if (main) {
                         const chunk = (main.innerText || '').substring(0, 500);
                         const m = chunk.match(/\\(([\\d,]+)\\)/);
+                        if (m) return m[1];
+                    }
+
+                    // Scan for "N reviews" text anywhere in the page
+                    const allText = document.body.innerText || '';
+                    const reviewMatch = allText.match(/(\\d[\\d,]*)\\s+reviews?/i);
+                    if (reviewMatch) return reviewMatch[1];
+
+                    // Scan for review count in button aria-labels
+                    for (const btn of document.querySelectorAll('button')) {
+                        const label = btn.getAttribute('aria-label') || '';
+                        const m = label.match(/(\\d[\\d,]*)\\s+reviews?/i);
                         if (m) return m[1];
                     }
 
@@ -970,7 +982,7 @@ async def _extract_description(page: Page) -> str | None:
             tab = await page.query_selector(sel)
             if tab and await tab.is_visible():
                 await tab.click()
-                await page.wait_for_timeout(700)  # reduced from 1200ms
+                await page.wait_for_timeout(1000)  # Wait for About tab content to render
                 logger.debug("  [description] clicked About tab via %r", sel)
                 about_clicked = True
                 break
@@ -987,7 +999,7 @@ async def _extract_description(page: Page) -> str | None:
                 btn_text = (await get_text(btn) or "").strip().lower()
                 if btn_text == "about" or btn_text.startswith("about"):
                     await btn.click()
-                    await page.wait_for_timeout(700)  # reduced from 1200ms
+                    await page.wait_for_timeout(1000)  # Wait for About tab content to render
                     logger.debug("  [description] About tab clicked via text scan: %r", btn_text)
                     about_clicked = True
                     break
@@ -1495,12 +1507,12 @@ async def _extract_reviews(page: Page) -> list[Review]:
         # Wait for review cards to appear
         for review_sel in REVIEW_ITEM_SELECTORS:
             try:
-                await page.wait_for_selector(review_sel, timeout=4000)
+                await page.wait_for_selector(review_sel, timeout=5000)
                 logger.debug("  [reviews] review element visible: %r", review_sel)
                 break
             except Exception:
                 continue
-        await page.wait_for_timeout(500)  # reduced from 800ms
+        await page.wait_for_timeout(1000)  # Wait for review cards to render
 
         # Scroll the panel to trigger lazy-loading of review cards
         try:
@@ -1509,7 +1521,7 @@ async def _extract_reviews(page: Page) -> list[Review]:
                 panel = await page.query_selector('.m6QErb[aria-label]')
             if panel:
                 await panel.evaluate("el => el.scrollTop += 600")
-                await page.wait_for_timeout(300)  # reduced from 500ms
+                await page.wait_for_timeout(600)  # Wait for lazy-loaded reviews to appear
         except Exception as e:
             logger.debug("  [reviews] panel scroll failed: %s", e)
 
@@ -1622,7 +1634,7 @@ async def _extract_attributes(page: Page) -> Attributes:
             tab = await page.query_selector(sel)
             if tab and await tab.is_visible():
                 await tab.click()
-                await page.wait_for_timeout(600)  # reduced from 1500ms — tab is usually already active after _extract_description
+                await page.wait_for_timeout(1000)  # Wait for About tab content to render
                 logger.debug("  [attributes] About tab clicked via %r", sel)
                 about_clicked = True
                 break
@@ -1667,6 +1679,45 @@ async def _extract_attributes(page: Page) -> Attributes:
                 logger.debug("  [attributes] %r matched %d items but all filtered as garbage", sel, len(raw))
         except Exception as e:
             logger.debug("  [attributes] selector %r error: %s", sel, e)
+
+    if not data["amenities"]:
+        # Fallback: JS-based attribute extraction
+        logger.debug("  [attributes] CSS selectors found nothing — trying JS fallback…")
+        try:
+            js_attrs: list[str] = await page.evaluate("""
+                () => {
+                    const results = [];
+                    // Look for attribute chips in the About section
+                    const selectors = [
+                        '.CK16pd .RiRi5e', '.iP2t7d .RiRi5e', '.hpLkke .RiRi5e',
+                        '.CK16pd span.fontBodyMedium', '.iP2t7d span.fontBodyMedium',
+                        '.e2moi span', '.Qqlxhb span',
+                        '[aria-label*="Amenities"] span',
+                        '[aria-label*="Highlights"] span',
+                        '[aria-label*="Offerings"] span',
+                        '[aria-label*="Accessibility"] span',
+                    ];
+                    for (const sel of selectors) {
+                        for (const el of document.querySelectorAll(sel)) {
+                            const text = (el.innerText || '').trim();
+                            if (text && text.length > 1 && text.length < 60
+                                && !/^\\d/.test(text)
+                                && !text.startsWith('\\u2713')
+                                && !text.startsWith('\\u2714')) {
+                                results.push(text);
+                            }
+                        }
+                        if (results.length >= 3) break;
+                    }
+                    // Deduplicate
+                    return [...new Set(results)];
+                }
+            """)
+            if js_attrs and len(js_attrs) >= 2:
+                data["amenities"] = js_attrs
+                logger.debug("  [attributes] JS fallback found %d tags: %s", len(js_attrs), js_attrs[:5])
+        except Exception as e:
+            logger.debug("  [attributes] JS fallback error: %s", e)
 
     if not data["amenities"]:
         logger.debug("  [attributes] no amenity tags found")
