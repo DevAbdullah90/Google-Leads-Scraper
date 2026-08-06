@@ -18,24 +18,41 @@ The user must provide:
 2. **Google Sheet ID** (or use default from `.env`)
 3. **Sheet name**: Which tab contains the leads
 
-## Two Workflows
+## Three-Tab System
 
-### Workflow A: Initial Outreach (New Leads)
-Reads from **Scraped Leads** tab → sends personalized email → logs to **Follow Up** tab
+| Tab | Purpose | Content |
+|---|---|---|
+| **Scraped Leads** | NEW leads only | Leads not yet emailed |
+| **Follow Up** | Emailed leads | Initial emails + follow-ups |
+| **All Leads** | Master list | Every lead ever scraped (never removed) |
 
-### Workflow B: Follow-Up (Existing Leads)
-Reads from **Follow Up** tab → sends follow-up email → updates row in **Follow Up** tab
+### Lead Lifecycle
+
+```
+Scraped Leads → [Email Sent] → Follow Up (+ All Leads stays)
+                   ↓
+            Remove from Scraped Leads
+```
+
+**When email is sent:**
+1. Lead is **removed** from "Scraped Leads" tab
+2. Lead is **added** to "Follow Up" tab
+3. Lead **stays** in "All Leads" tab (never removed)
+
+**When follow-up is sent:**
+1. Lead stays in "Follow Up" tab (count incremented)
+2. Lead stays in "All Leads" tab
 
 ---
 
 ## Workflow A: Initial Outreach
 
-### Step 1: Read Leads from Google Sheet
+### Step 1: Read Leads from Scraped Leads Tab
 
 ```
 google-sheets_read-range
   spreadsheet_id: (from user or .env GOOGLE_SHEETS_SPREADSHEET_ID)
-  range_name: "{Sheet Name}!A1:AA"
+  range_name: "Scraped Leads!A1:AA"
 ```
 
 Expected columns (A–AA):
@@ -153,16 +170,25 @@ Use `ZohoMCP_ZohoMail_sendEmail` to send each email.
 4. ALWAYS embed the HTML signature directly — `includeSignature: true` does NOT work
 5. Read signature from `config/email_signature.html` and append to email content
 
-### Step 6: Log to Follow Up Tab
+### Step 6: Update All Three Tabs
 
-After each email is sent, append the lead to the **Follow Up** tab:
+After each email is sent:
 
+**A. Add to Follow Up tab:**
 ```
 google-sheets_append-rows
   spreadsheet_id: (same sheet)
   range_name: "Follow Up!A:F"
   values: [[business_name, email, industry, pain_hook_used, sent_date, 0]]
 ```
+
+**B. Remove from Scraped Leads tab:**
+- Find the row number of the lead in Scraped Leads
+- Delete the entire row (or mark as "SENT" in a status column)
+
+**C. All Leads tab:**
+- Lead should already be in All Leads (from initial scraping)
+- No action needed — lead stays there permanently
 
 If the "Follow Up" tab doesn't exist, create it first with headers:
 `Business Name | Email | Industry | Pain Hook | Sent Date | Follow-up Count`
@@ -363,7 +389,9 @@ Agent:
 3. Mine reviews for pain points (col AA)
 4. Generate personalized emails
 5. Send via Zoho Mail MCP
-6. Log each sent email to Follow Up tab (cols A–F, count = 0)
+6. Add each sent email to Follow Up tab (cols A–F, count = 0)
+7. Remove each sent lead from Scraped Leads tab
+8. Lead remains in All Leads tab (no action needed)
 ```
 
 ### Follow-Up Campaign
@@ -384,6 +412,6 @@ Agent:
 - Rate limit: max 10 emails per batch, wait 5 seconds between sends
 - If an email fails, log it and continue with the next lead
 - Never send to leads without a valid email address
-- Every email sent goes to Follow Up tab — no exceptions
+- Every email sent: removed from Scraped Leads, added to Follow Up, stays in All Leads
 - Follow-up Count starts at 0, maxes at 3
 - No reply tracking needed — all leads stay in Follow Up tab regardless of replies
